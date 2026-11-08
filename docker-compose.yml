@@ -1,0 +1,25 @@
+services:
+  db:
+    image: postgres:16
+    container_name: auth_pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: dev
+      POSTGRES_PASSWORD: devpsswrd
+      POSTGRES_DB: auth_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data 
+
+  mail:
+    image: axllent/mailpit
+    container_name: auth_mail
+    restart: unless-stopped
+    ports:
+      - "1025:1025"   
+      - "8025:8025"  
+
+volumes:
+  pgdata:
+

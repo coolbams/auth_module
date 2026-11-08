@@ -1,0 +1,22 @@
+[project]
+name = "auth-module"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "alembic>=1.20.1",
+    "applog[fastapi]",
+    "argon2-cffi>=25.1.0",
+    "fastapi[standard]>=0.162.2",
+    "itsdangerous>=2.2.0",
+    "psycopg2-binary>=2.9.13",
+    "sqlalchemy>=2.1.8",
+]
+
+[build-system]
+requires = ["uv_build>=0.13.7,<0.14.0"]
+build-backend = "uv_build"
+
+[tool.uv.sources]
+applog = { git = "https://github.com/coolbams/appLog", rev = "v0.1.0" }
