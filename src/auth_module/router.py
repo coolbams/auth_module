@@ -1,21 +1,21 @@
 import uuid
+import math
 import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import EmailStr, BaseModel, field_validator
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
-
 from auth_module.models import User
+from auth_module.config import settings
 from auth_module.database import get_db
-from auth_module.validators import validate_password
 from auth_module.dependencies import get_current_user
 from auth_module.mailer import send_verification_email
 from auth_module.security import hash_password, verify_password
+from auth_module.schemas import RegisterRequest, LoginRequest, ResendRequest
 from auth_module.tokens import ExpiredToken, InvalidToken, create_verification_token, read_verification_token
 
 
@@ -25,24 +25,6 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 
-
-class LoginRequest(BaseModel):
-    email: EmailStr
-    password: str
-
-
-class RegisterRequest(BaseModel):
-    email: EmailStr
-    password: str
-    
-    @field_validator("password")
-    @classmethod
-    def password_rules(cls, value: str) -> str:
-        problems = validate_password(value)
-        if problems:
-            raise ValueError("Password needs " + ", ".join(problems))
-        return value
-    
     
 
 @router.post("/register")
@@ -108,6 +90,36 @@ def verify_email(token: str, db: Session = Depends(get_db)):
         db.commit()
         log.info("Email verified user id=%s", user.id)
     return {"message": "Email verified. You can log in now."}
+
+
+@router.post("/resend-verification")
+def resend_verification(body: ResendRequest, db: Session = Depends(get_db)):
+    generic = {"message": "If that account exists and isn't verified, a new email has been sent."}
+    
+    user = db.execute(select(User).where(User.email == body.email.lower())).scalar_one_or_none()
+    if not user or user.is_verified:
+        return generic 
+
+    if user.last_verification_sent_at:
+        elapsed = (datetime.now(timezone.utc) - user.last_verification_sent_at).total_seconds()
+        wait = math.ceil(settings.resend_cooldown_seconds - elapsed)
+        if wait > 0:
+            raise HTTPException(
+                429,
+                f"Please wait {wait} seconds before requesting another email",
+                headers={"Retry-After": str(wait)},
+            )
+            
+    try:
+        send_verification_email(user.email, create_verification_token(str(user.id)))
+    except Exception:
+        log.exception("Failed to resend verification email to %s", user.email)
+        raise HTTPException(503, "Could not send the email right now. Try again later.")
+
+    user.last_verification_sent_at = datetime.now(timezone.utc)
+    db.commit()
+    log.info("Verification email resent user id=%s", user.id)
+    return generic
 
 
 
