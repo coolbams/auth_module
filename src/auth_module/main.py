@@ -1,7 +1,5 @@
 from fastapi import FastAPI, HTTPException, Request
 
-
-
 from auth_module.database import Base, engine, check_db
 from auth_module import models
 from auth_module.router import router as auth_router

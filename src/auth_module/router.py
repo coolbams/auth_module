@@ -1,5 +1,6 @@
 import uuid
 import math
+import secrets
 import logging
 from datetime import datetime, timezone
 
@@ -24,7 +25,14 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-
+def send_new_verification(user:User, db: Session) -> None:
+    """ Send a fresh link. Every link sent before this one stops working. """
+    
+    user.verification_nonce = secrets.token_hex(8)
+    token = create_verification_token(str(user.id), user.verification_nonce)
+    send_verification_email(user.email, token)
+    user.last_verification_sent_at = datetime.now(timezone.utc)
+    db.commit()
     
 
 @router.post("/register")
@@ -39,15 +47,14 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)):
         raise HTTPException(409, "Email already registered")
     
     try:
-        send_verification_email(user.email, create_verification_token(str(user.id)))
-        user.last_verification_sent_at = datetime.now(timezone.utc)
-        db.commit()
-        
+        send_new_verification(user, db)        
     except Exception:
-         log.exception("Failed to send verification email to %s", user.email)
+        db.rollback()
+        log.exception("Failed to send verification email to %s", user.email)
 
     log.info("Registered user id=%s", user.id)
     return {"message": "Registered. Check your email to verify your account."}
+
 
 
 
@@ -74,7 +81,7 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
 def verify_email(token: str, db: Session = Depends(get_db)):
     
     try:
-        user_id = read_verification_token(token)
+        user_id, nonce = read_verification_token(token)
     except ExpiredToken:
         raise HTTPException(400, "Verification link expired. Request a new one.")
     except InvalidToken:
@@ -85,11 +92,19 @@ def verify_email(token: str, db: Session = Depends(get_db)):
     if not user:
         raise HTTPException(400, "Invalid verification link.")
     
-    if not user.is_verified:
-        user.is_verified = True
-        db.commit()
-        log.info("Email verified user id=%s", user.id)
+    if user.is_verified:                          # clicking twice is still fine
+        return {"message": "Email verified. You can log in now."}
+
+    if user.verification_nonce != nonce:
+        raise HTTPException(400, "This link is outdated. Use the latest email we sent you.")
+
+    user.is_verified = True
+    user.verification_nonce = None               
+    db.commit()
+    log.info("Email verified user id=%s", user.id)
     return {"message": "Email verified. You can log in now."}
+
+
 
 
 @router.post("/resend-verification")
@@ -111,15 +126,17 @@ def resend_verification(body: ResendRequest, db: Session = Depends(get_db)):
             )
             
     try:
-        send_verification_email(user.email, create_verification_token(str(user.id)))
+        send_new_verification(user, db)
     except Exception:
         log.exception("Failed to resend verification email to %s", user.email)
         raise HTTPException(503, "Could not send the email right now. Try again later.")
 
-    user.last_verification_sent_at = datetime.now(timezone.utc)
-    db.commit()
     log.info("Verification email resent user id=%s", user.id)
     return generic
+
+
+
+
 
 
 

@@ -13,10 +13,10 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255))
     is_verified: Mapped[bool] = mapped_column(default=False)
+    verification_nonce: Mapped[str | None] = mapped_column(String(32), nullable=True)
     last_verification_sent_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    
     
 class UserSessions(Base):
     __tablename__ = "sessions"

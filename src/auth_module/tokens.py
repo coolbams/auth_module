@@ -13,16 +13,19 @@ class ExpiredToken(Exception):
     """Token was valid but is older than the allowed lifetime."""
 
 
-def create_verification_token(user_id: str) -> str:
-    return _serializer.dumps(str(user_id))
+def create_verification_token(user_id: str, nonce: str) -> str:
+    return _serializer.dumps({"uid":str(user_id), "n":nonce})
 
 
-def read_verification_token(token: str) -> str:
-    """Return the user id inside the token, or raise InvalidToken / ExpiredToken."""
+
+def read_verification_token(token:str) -> tuple[str, str]:
+    """Return (user_id, nonce), or raise InvalidToken / ExpiredToken. """
+    
     max_age = settings.verification_token_expire_minutes * 60
     try:
-        return _serializer.loads(token, max_age=max_age)
-    except SignatureExpired:      # must come first: it's a subclass of BadSignature
+        data = _serializer.loads(token, max_age=max_age)
+        return data["uid"], data["n"]
+    except SignatureExpired:
         raise ExpiredToken
-    except BadSignature:
+    except (BadSignature, KeyError, TypeError):
         raise InvalidToken
